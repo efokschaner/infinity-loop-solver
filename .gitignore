@@ -2,6 +2,14 @@
 *.apk
 *.ap_
 
+# Exclusion to allow committing the game apk
+!∞ Loop_v3_0.apk
+
+# AndroidStudio files
+*.iml
+.idea
+/captures
+
 # Files for the Dalvik VM
 *.dex
 
@@ -25,3 +33,6 @@ proguard/
 
 # Log Files
 *.log
+
+# Dreaded DS_Store
+.DS_Store

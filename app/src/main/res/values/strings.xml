@@ -1,0 +1,17 @@
+<resources>
+    <string name="app_name">Infinity Loop Solver</string>
+    <string name="accessibility_service_description">Helps solve InfinityLoop</string>
+
+    <string name="title_activity_settings">Settings</string>
+
+    <!-- Strings related to Settings -->
+
+    <!-- Example General settings -->
+    <string name="pref_header_general">General</string>
+
+    <string name="pref_title_enabled">Enable</string>
+    <string name="pref_description_enabled">Automatically plays InfinityLoop when enabled</string>
+    <string name="toast_launching">Launching the solver service</string>
+    <string name="accessibility_settings_button_text">Accessibility Settings</string>
+
+</resources>
