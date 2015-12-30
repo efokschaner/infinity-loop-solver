@@ -8,8 +8,13 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.graphics.Rect;
+import android.os.SystemClock;
 import android.test.InstrumentationTestCase;
 import android.util.Log;
+import android.view.InputDevice;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
@@ -35,7 +40,7 @@ public class UiAutomationTest extends InstrumentationTestCase {
 
     private static final Runnable NOOP = new Runnable() { public void run() {} };
 
-    private void sendBitmap(Bitmap bitmap) {
+    private static void sendBitmap(Bitmap bitmap) {
         try {
             String timestamp = new SimpleDateFormat("HH_mm_ss").format(new Date());
             URL url = new URL("http://10.0.2.2:8888/" + timestamp + ".png");
@@ -74,6 +79,15 @@ public class UiAutomationTest extends InstrumentationTestCase {
         }
     }
 
+    private static void sendScreenshot(UiAutomation uiAutomation) {
+        Bitmap b = uiAutomation.takeScreenshot();
+        try{
+            sendBitmap(b);
+        } finally {
+            b.recycle();
+        }
+    }
+
     private static AccessibilityNodeInfo findInfinityLoopView(AccessibilityNodeInfo node) {
         final String viewIdResourceName = node.getViewIdResourceName();
         if(viewIdResourceName != null && viewIdResourceName.equals("com.balysv.loop:id/game_scene_view_light")) {
@@ -91,6 +105,7 @@ public class UiAutomationTest extends InstrumentationTestCase {
 
     private static boolean isInfinityLoopReady(List<AccessibilityWindowInfo> windows) {
         // Determine if InfinityLoop (and only InfinityLoop) is on screen
+        Log.d(TAG, String.format("windows.size() = %s", windows.size()));
         return (windows.size() == 1 &&
                 (findInfinityLoopView(windows.get(0).getRoot())) != null);
     }
@@ -104,14 +119,57 @@ public class UiAutomationTest extends InstrumentationTestCase {
         }
     }
 
-    public void test() throws TimeoutException {
+    /**
+     * Helper method injects a click event at a point on the active screen via the UiAutomation object.
+     * @param x the x position on the screen to inject the click event
+     * @param y the y position on the screen to inject the click event
+     * @param automation a UiAutomation object retreived through the current Instrumentation
+     */
+    private static void injectClickEvent(float x, float y, UiAutomation automation){
+        //A MotionEvent is a type of InputEvent.
+        //The event time must be the current uptime.
+        final long eventTime = SystemClock.uptimeMillis();
+        //A typical click event triggered by a user click on the touchscreen creates two MotionEvents,
+        //first one with the action KeyEvent.ACTION_DOWN and the 2nd with the action KeyEvent.ACTION_UP
+        MotionEvent motionDown = MotionEvent.obtain(
+                eventTime,
+                eventTime,
+                MotionEvent.ACTION_DOWN,
+                x,
+                y,
+                0);
+        //We must set the source of the MotionEvent or the click doesn't work.
+        motionDown.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+        automation.injectInputEvent(motionDown, true);
+        MotionEvent motionUp = MotionEvent.obtain(
+                eventTime,
+                eventTime,
+                KeyEvent.ACTION_UP,
+                x,
+                y,
+                0);
+        motionUp.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+        automation.injectInputEvent(motionUp, true);
+        //Recycle our events back to the system pool.
+        motionUp.recycle();
+        motionDown.recycle();
+    }
+
+    public void test() throws TimeoutException, InterruptedException {
         Log.d(TAG, "test()");
         final Instrumentation instrumentation = getInstrumentation();
         final UiAutomation uiAutomation = instrumentation.getUiAutomation();
         final AccessibilityServiceInfo serviceInfo = uiAutomation.getServiceInfo();
         serviceInfo.flags |= AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
         uiAutomation.setServiceInfo(serviceInfo);
-        Log.d(TAG, uiAutomation.getServiceInfo().toString());
+        // Sometimes uiAutomation.getWindows returns no windows for a while
+        /*
+        while(uiAutomation.getWindows().size() == 0) {
+            Log.d(TAG, "Waiting for windows");
+            Thread.sleep(1000);
+        }
+        */
+
         final Context context = instrumentation.getContext();
         final PackageManager packageManager = context.getPackageManager();
         final Intent launchIntent = packageManager.getLaunchIntentForPackage("com.balysv.loop");
@@ -126,11 +184,18 @@ public class UiAutomationTest extends InstrumentationTestCase {
                 }
             }, 10000);
         }
-        Bitmap b = uiAutomation.takeScreenshot();
-        try{
-            sendBitmap(b);
-        } finally {
-            b.recycle();
+
+        sendScreenshot(uiAutomation);
+
+        for(int i = 0; i < 10; ++i)
+        {
+            Rect windowBounds = new Rect();
+            uiAutomation.getWindows().get(0).getBoundsInScreen(windowBounds);
+            final float xpos = windowBounds.exactCenterX() + 20;
+            final float ypos = windowBounds.exactCenterY() + 20;
+            injectClickEvent(xpos, ypos, uiAutomation);
+            Thread.sleep(1000);
+            sendScreenshot(uiAutomation);
         }
     }
 }
