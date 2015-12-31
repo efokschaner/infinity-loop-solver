@@ -1,16 +1,10 @@
 package efokschaner.infinityloopsolver;
 
 
-import android.accessibilityservice.AccessibilityServiceInfo;
-import android.app.Instrumentation;
 import android.app.UiAutomation;
-import android.content.Context;
-import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Rect;
 import android.os.SystemClock;
-import android.test.InstrumentationTestCase;
 import android.util.Log;
 import android.view.InputDevice;
 import android.view.KeyEvent;
@@ -30,13 +24,46 @@ import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
-import java.util.concurrent.TimeoutException;
 
+public class Solver {
+    private static final String TAG = Solver.class.getSimpleName();
 
-// Try using Context.startInstrumentation to move this functionality back into app
-// Need to derive from Instrumentation class itself and implement onStart (see InstrumentationTestRunner)
-public class UiAutomationTest extends InstrumentationTestCase {
-    private static final String TAG = UiAutomationTest.class.getSimpleName();
+    private final UiAutomation mUiAutomation;
+    private Thread mSolverThread;
+
+    public Solver(UiAutomation uiAutomation, Runnable launchInfinityLoop) {
+        mUiAutomation = uiAutomation;
+        mUiAutomation.setOnAccessibilityEventListener(new UiAutomation.OnAccessibilityEventListener() {
+            @Override
+            public void onAccessibilityEvent(AccessibilityEvent event) {
+                if(isInfinityLoopReady(mUiAutomation, event)) {
+                    if(mSolverThread == null) {
+                        mSolverThread = new Thread(mRunnableSolver);
+                        mSolverThread.start();
+                    }
+                } else {
+                    if(mSolverThread != null) {
+                        shutdown();
+                    }
+                }
+            }
+        });
+        launchInfinityLoop.run();
+    }
+
+    public void shutdown() {
+        Log.d(TAG, "Shutting down");
+        if(mSolverThread != null) {
+            mSolverThread.interrupt();
+            try {
+                mSolverThread.join();
+            } catch (InterruptedException e) {
+                // ignore
+            } finally {
+                mSolverThread = null;
+            }
+        }
+    }
 
     private static final Runnable NOOP = new Runnable() { public void run() {} };
 
@@ -155,47 +182,28 @@ public class UiAutomationTest extends InstrumentationTestCase {
         motionDown.recycle();
     }
 
-    public void test() throws TimeoutException, InterruptedException {
-        Log.d(TAG, "test()");
-        final Instrumentation instrumentation = getInstrumentation();
-        final UiAutomation uiAutomation = instrumentation.getUiAutomation();
-        final AccessibilityServiceInfo serviceInfo = uiAutomation.getServiceInfo();
-        serviceInfo.flags |= AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
-        uiAutomation.setServiceInfo(serviceInfo);
-        // Sometimes uiAutomation.getWindows returns no windows for a while
-        /*
-        while(uiAutomation.getWindows().size() == 0) {
-            Log.d(TAG, "Waiting for windows");
-            Thread.sleep(1000);
-        }
-        */
-
-        final Context context = instrumentation.getContext();
-        final PackageManager packageManager = context.getPackageManager();
-        final Intent launchIntent = packageManager.getLaunchIntentForPackage("com.balysv.loop");
-        if(launchIntent != null) {
-            context.startActivity(launchIntent);
-        }
-        if(!isInfinityLoopReady(uiAutomation.getWindows())) {
-            uiAutomation.executeAndWaitForEvent(NOOP, new UiAutomation.AccessibilityEventFilter() {
-                @Override
-                public boolean accept(AccessibilityEvent event) {
-                    return isInfinityLoopReady(uiAutomation, event);
+    private Runnable mRunnableSolver = new Runnable() {
+        @Override
+        public void run() {
+            Log.d(TAG, "run()");
+            try {
+                sendScreenshot(mUiAutomation);
+                for(int i = 0; i < 10; ++i)
+                {
+                    Rect windowBounds = new Rect();
+                    mUiAutomation.getWindows().get(0).getBoundsInScreen(windowBounds);
+                    final float xpos = windowBounds.exactCenterX() + 20;
+                    final float ypos = windowBounds.exactCenterY() + 20;
+                    injectClickEvent(xpos, ypos, mUiAutomation);
+                    Thread.sleep(1000);
+                    sendScreenshot(mUiAutomation);
                 }
-            }, 10000);
+            } catch (InterruptedException e) {
+                // ignore
+            }
         }
+    };
 
-        sendScreenshot(uiAutomation);
 
-        for(int i = 0; i < 10; ++i)
-        {
-            Rect windowBounds = new Rect();
-            uiAutomation.getWindows().get(0).getBoundsInScreen(windowBounds);
-            final float xpos = windowBounds.exactCenterX() + 20;
-            final float ypos = windowBounds.exactCenterY() + 20;
-            injectClickEvent(xpos, ypos, uiAutomation);
-            Thread.sleep(1000);
-            sendScreenshot(uiAutomation);
-        }
-    }
+
 }
