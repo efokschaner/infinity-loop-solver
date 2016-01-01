@@ -8,10 +8,6 @@ import android.content.pm.PackageManager;
 public class SolverApplication extends Application {
     private UiAutomation mUiAutomation;
 
-    public UiAutomation getUiAutomation() {
-        return mUiAutomation;
-    }
-
     public void setUiAutomation(UiAutomation mUiAutomation) {
         this.mUiAutomation = mUiAutomation;
     }
@@ -20,16 +16,12 @@ public class SolverApplication extends Application {
 
     public void enableSolver() {
         if(mSolver == null) {
-            mSolver = new Solver(mUiAutomation, new Runnable() {
-                @Override
-                public void run() {
-                    final PackageManager packageManager = SolverApplication.this.getPackageManager();
-                    final Intent launchIntent = packageManager.getLaunchIntentForPackage("com.balysv.loop");
-                    if(launchIntent != null) {
-                        SolverApplication.this.startActivity(launchIntent);
-                    }
-                }
-            });
+            mSolver = new Solver(mUiAutomation);
+            final PackageManager packageManager = SolverApplication.this.getPackageManager();
+            final Intent launchIntent = packageManager.getLaunchIntentForPackage("com.balysv.loop");
+            if(launchIntent != null) {
+                SolverApplication.this.startActivity(launchIntent);
+            }
         }
     }
 

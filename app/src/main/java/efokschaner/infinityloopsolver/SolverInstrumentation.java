@@ -5,15 +5,9 @@ import android.app.Application;
 import android.app.Instrumentation;
 import android.app.UiAutomation;
 import android.content.Intent;
-import android.os.Bundle;
 
 public class SolverInstrumentation extends Instrumentation {
     private static final String TAG = SolverInstrumentation.class.getSimpleName();
-
-    @Override
-    public void onCreate(Bundle arguments) {
-        super.onCreate(arguments);
-    }
 
     @Override
     public void callApplicationOnCreate(final Application app) {
