@@ -32,47 +32,88 @@ public class GameState {
         public TileOrientation rotate() {
             return new TileOrientation(0);
         }
+
+        public double getAngle() {
+            return mValue * 90;
+        }
     }
 
     public enum TileType {
-        EMPTY(Direction.NONE, new TileOrientation[]{
-                TileOrientation.ZERO
-        }),
-        END(Direction.UP, new TileOrientation[]{
-                TileOrientation.ZERO,
-                TileOrientation.QUARTER,
-                TileOrientation.HALF,
-                TileOrientation.THREE_QUARTERS
-        }),
-        LINE(Direction.UP| Direction.DOWN, new TileOrientation[]{
-                TileOrientation.ZERO,
-                TileOrientation.QUARTER
-        }),
-        CORNER(Direction.UP| Direction.RIGHT, new TileOrientation[]{
-                TileOrientation.ZERO,
-                TileOrientation.QUARTER,
-                TileOrientation.HALF,
-                TileOrientation.THREE_QUARTERS
-        }),
-        TEE(Direction.UP| Direction.RIGHT| Direction.DOWN, new TileOrientation[]{
-                TileOrientation.ZERO,
-                TileOrientation.QUARTER,
-                TileOrientation.HALF,
-                TileOrientation.THREE_QUARTERS
-        }),
-        CROSS(Direction.UP| Direction.RIGHT| Direction.DOWN| Direction.LEFT, new TileOrientation[]{
-                TileOrientation.ZERO
-        });
+        EMPTY(
+                Direction.NONE,
+                new TileOrientation[]{
+                        TileOrientation.ZERO
+                },
+                null
+        ),
+        END(
+                Direction.UP,
+                new TileOrientation[]{
+                        TileOrientation.ZERO,
+                        TileOrientation.QUARTER,
+                        TileOrientation.HALF,
+                        TileOrientation.THREE_QUARTERS
+                },
+                "End.png"
+        ),
+        LINE(
+                Direction.UP | Direction.DOWN,
+                new TileOrientation[]{
+                        TileOrientation.ZERO,
+                        TileOrientation.QUARTER
+                },
+                "Line.png"
+        ),
+        CORNER(
+                Direction.UP | Direction.RIGHT,
+                new TileOrientation[]{
+                        TileOrientation.ZERO,
+                        TileOrientation.QUARTER,
+                        TileOrientation.HALF,
+                        TileOrientation.THREE_QUARTERS
+                },
+                "Corner.png"
+        ),
+        TEE(
+                Direction.UP | Direction.RIGHT | Direction.DOWN,
+                new TileOrientation[]{
+                        TileOrientation.ZERO,
+                        TileOrientation.QUARTER,
+                        TileOrientation.HALF,
+                        TileOrientation.THREE_QUARTERS
+                },
+                "Tee.png"),
+        CROSS(
+                Direction.UP | Direction.RIGHT | Direction.DOWN | Direction.LEFT,
+                new TileOrientation[]{
+                        TileOrientation.ZERO
+                },
+                "Cross.png"
+        );
 
 
         private final int mConnectionDirections;
+
+        public TileOrientation[] getPossibleOrientations() {
+            return mPossibleOrientations;
+        }
+
         private final TileOrientation[] mPossibleOrientations;
+        private final String mImageFileName;
 
         // connectionDirections are which directions the tile connects to in its default orientation
         // possibleOrientations allows us to cull orientations that are the same for the purposes of the game
-        TileType(int connectionDirections, TileOrientation[] possibleOrientations) {
+        TileType(
+                int connectionDirections,
+                TileOrientation[] possibleOrientations,
+                String imageFileName) {
             mConnectionDirections = connectionDirections;
             mPossibleOrientations = possibleOrientations;
+            mImageFileName = imageFileName;
+        }
+
+        public String getImageFileName() {
+            return mImageFileName;
         }
     }
 

@@ -13,14 +13,17 @@ import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
 
 import java.util.List;
+import java.util.concurrent.TimeoutException;
 
 public class Solver {
     private static final String TAG = Solver.class.getSimpleName();
 
     private final UiAutomation mUiAutomation;
+    private final ImageProcessor mImageProcessor;
     private Thread mSolverThread;
 
-    public Solver(UiAutomation uiAutomation) {
+    public Solver(UiAutomation uiAutomation, ImageProcessor imageProcessor) {
+        mImageProcessor = imageProcessor;
         mUiAutomation = uiAutomation;
         mUiAutomation.setOnAccessibilityEventListener(new UiAutomation.OnAccessibilityEventListener() {
             @Override
@@ -131,19 +134,20 @@ public class Solver {
             Log.d(TAG, "run()");
             try {
                 while(!Thread.interrupted()) {
+                    mUiAutomation.waitForIdle(500, 10000);
                     Bitmap b = mUiAutomation.takeScreenshot();
                     try{
-                        final GameState gameStateFromImage = ImageProcessor.getGameStateFromImage(b);
+                        final GameState gameStateFromImage = mImageProcessor.getGameStateFromImage(b);
                         // Perform moves...
                         // using injectClickEvent(xpos, ypos, mUiAutomation);
                         // and some sleeps / waits between moves
-                        Thread.sleep(1000);
+                        Thread.sleep(5000);
                     } finally {
                         b.recycle();
                     }
                 }
-            } catch (InterruptedException e) {
-                // ignore
+            } catch (TimeoutException | InterruptedException e) {
+                e.printStackTrace();
             }
         }
     };

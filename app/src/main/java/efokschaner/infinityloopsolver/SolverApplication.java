@@ -6,6 +6,15 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 
 public class SolverApplication extends Application {
+
+    private ImageProcessor mProcessor;
+    private ImageProcessor getImageProcessor() {
+        if (mProcessor == null) {
+            mProcessor = new ImageProcessor(getAssets());
+        }
+        return mProcessor;
+    }
+
     private UiAutomation mUiAutomation;
 
     public void setUiAutomation(UiAutomation mUiAutomation) {
@@ -16,7 +25,7 @@ public class SolverApplication extends Application {
 
     public void enableSolver() {
         if(mSolver == null) {
-            mSolver = new Solver(mUiAutomation);
+            mSolver = new Solver(mUiAutomation, getImageProcessor());
             final PackageManager packageManager = SolverApplication.this.getPackageManager();
             final Intent launchIntent = packageManager.getLaunchIntentForPackage("com.balysv.loop");
             if(launchIntent != null) {

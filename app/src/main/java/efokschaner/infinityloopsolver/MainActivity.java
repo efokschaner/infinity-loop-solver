@@ -68,4 +68,11 @@ public class MainActivity extends AppCompatActivity {
             }
         });
     }
+
+    @Override
+    protected void onDestroy() {
+        final SolverApplication app = (SolverApplication) getApplication();
+        app.disableSolver();
+        super.onDestroy();
+    }
 }
