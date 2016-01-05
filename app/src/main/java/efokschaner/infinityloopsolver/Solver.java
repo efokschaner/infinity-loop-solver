@@ -131,17 +131,33 @@ public class Solver {
     private Runnable mRunnableSolver = new Runnable() {
         @Override
         public void run() {
-            Log.d(TAG, "run()");
             try {
+                mUiAutomation.waitForIdle(500, 10000);
                 while(!Thread.interrupted()) {
-                    mUiAutomation.waitForIdle(500, 10000);
+                    // click to complete the level
+                    Log.d(TAG, "Completing level");
+                    injectClickEvent(20, 20, mUiAutomation);
+                    Thread.sleep(3200);
+                    Log.d(TAG, "Interpreting");
                     Bitmap b = mUiAutomation.takeScreenshot();
                     try{
                         final GameState gameStateFromImage = mImageProcessor.getGameStateFromImage(b);
-                        // Perform moves...
-                        // using injectClickEvent(xpos, ypos, mUiAutomation);
-                        // and some sleeps / waits between moves
-                        Thread.sleep(5000);
+                        if(gameStateFromImage != null) {
+                            Log.d(TAG, "Solving");
+                            try {
+                                final List<ClickAction> actions = gameStateFromImage.getSolution();
+                                if(!Thread.interrupted()) {
+                                    Log.d(TAG, "Acting");
+                                    for(ClickAction action : actions) {
+                                        injectClickEvent(action.xpos, action.ypos, mUiAutomation);
+                                        Thread.sleep(80);
+                                    }
+                                    Thread.sleep(1500);
+                                }
+                            } catch (GameState.UnsolvableError unsolvableError) {
+                                unsolvableError.printStackTrace();
+                            }
+                        }
                     } finally {
                         b.recycle();
                     }
@@ -151,5 +167,4 @@ public class Solver {
             }
         }
     };
-
 }
