@@ -30,7 +30,7 @@ public class ImageProcessor {
     private final Map<TileType, PrecomputedTileImageData> mTileImages = new HashMap<>();
 
     private static double globalScaleFactor = 0.5;
-    private final double[] tileImageScalesRange = new double[]{1, 0.9, 0.8, 0.7};
+    private final double[] tileImageScalesRange = new double[]{1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7};
 
     public static Mat rotateImage(Mat img, double angleDegrees) {
         Point center = new Point(img.cols() / 2, img.rows() / 2);
