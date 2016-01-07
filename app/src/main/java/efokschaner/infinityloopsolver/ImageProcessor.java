@@ -13,6 +13,7 @@ import org.opencv.core.Mat;
 import org.opencv.core.MatOfPoint;
 import org.opencv.core.Point;
 import org.opencv.core.Rect;
+import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 
@@ -27,10 +28,12 @@ import java.util.Map;
 public class ImageProcessor {
     private static final String TAG = ImageProcessor.class.getSimpleName();
 
+    private static final boolean DEBUG = false;
+
     private final Map<TileType, PrecomputedTileImageData> mTileImages = new HashMap<>();
 
     private static double globalScaleFactor = 0.5;
-    private final double[] tileImageScalesRange = new double[]{1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7};
+    private final ArrayList<Double> tileImageScalesRange = new ArrayList<>();
 
     public static Mat rotateImage(Mat img, double angleDegrees) {
         Point center = new Point(img.cols() / 2, img.rows() / 2);
@@ -71,6 +74,9 @@ public class ImageProcessor {
     }
 
     public ImageProcessor(AssetManager assMan) {
+        for (double s = 1.0; s > 0.79; s -= 0.02) {
+            tileImageScalesRange.add(s);
+        }
         for(TileType t: TileType.values()) {
             if(t.getImageFileName() != null) {
                 try(final InputStream ifstream = assMan.open(t.getImageFileName())) {
@@ -114,9 +120,20 @@ public class ImageProcessor {
 
     public GameState getGameStateFromImage(Bitmap b) {
         ArrayList<GuessRecord> guesses = new ArrayList<>();
-        Mat gameImage = bitmapToBinaryMat(b, globalScaleFactor);
+        Mat lowResBinaryGameImage = bitmapToBinaryMat(b, globalScaleFactor);
+        // zero out the options menu from the bottom of the game otherwise it gets in the way
+        // of image processing
+        int heightOfMenuButtonSection = (int) Math.round(0.075 * lowResBinaryGameImage.height());
+        Rect menuButtonRoiRect = new Rect(
+                0,
+                lowResBinaryGameImage.height() - heightOfMenuButtonSection - 1,
+                lowResBinaryGameImage.width(),
+                heightOfMenuButtonSection);
+        Mat menuButtonRoi = new Mat(lowResBinaryGameImage, menuButtonRoiRect);
+        menuButtonRoi.setTo(new Scalar(0));
+
         // Crop the game image down to eliminate some of the search space
-        final Rect tilesBoundingRect = getTilesBoundingRect(gameImage);
+        final Rect tilesBoundingRect = getTilesBoundingRect(lowResBinaryGameImage);
         // Widen the bounding rect slightly to avoid making recognition near the edges suffer
         int largestTileWidth = 144;
         // buffer selected to add around half a tile of padding around the image.
@@ -124,8 +141,8 @@ public class ImageProcessor {
         final Rect gameImageRoiRect = new Rect(
                 Math.max(tilesBoundingRect.x - buffer, 0),
                 Math.max(tilesBoundingRect.y - buffer, 0),
-                Math.min(tilesBoundingRect.width + 2*buffer, gameImage.width() - tilesBoundingRect.x),
-                Math.min(tilesBoundingRect.height + 2*buffer, gameImage.height() - tilesBoundingRect.y));
+                Math.min(tilesBoundingRect.width + 2*buffer, lowResBinaryGameImage.width() - tilesBoundingRect.x + buffer),
+                Math.min(tilesBoundingRect.height + 2*buffer, lowResBinaryGameImage.height() - tilesBoundingRect.y + buffer));
 
         final Rect tilesBoundingRectRelativeToGameRoiRect = new Rect(
                 tilesBoundingRect.x - gameImageRoiRect.x,
@@ -133,8 +150,12 @@ public class ImageProcessor {
                 tilesBoundingRect.width,
                 tilesBoundingRect.height);
 
-        Mat gameImageRoi = new Mat(gameImage, gameImageRoiRect);
+        Mat gameImageRoi = new Mat(lowResBinaryGameImage, gameImageRoiRect);
+        if(DEBUG) {
+            Debug.sendMatrix(gameImageRoi);
+        }
         double derivedScale = getTileScale(gameImageRoi);
+        Log.d(TAG, String.format("Tile scale: %s", derivedScale));
         for(Map.Entry<TileType, PrecomputedTileImageData> tileTypeEntry : mTileImages.entrySet()) {
             Map<TileOrientation, Mat> orientationImageMap = tileTypeEntry.getValue().precomputedImages.get(derivedScale);
             for(Map.Entry<TileOrientation, Mat> tileOrientationEntry : orientationImageMap.entrySet()) {
@@ -142,19 +163,25 @@ public class ImageProcessor {
                 Mat match = new Mat();
                 Imgproc.matchTemplate(gameImageRoi, tileImageToMatch, match, Imgproc.TM_SQDIFF_NORMED);
                 Mat matchThreshed = new Mat();
-                Imgproc.threshold(match, matchThreshed, 0.2, 255, Imgproc.THRESH_BINARY_INV);
+                Imgproc.threshold(match, matchThreshed, 0.3, 255, Imgproc.THRESH_BINARY_INV);
                 Mat eightBitMatchThreshed = new Mat();
                 matchThreshed.convertTo(eightBitMatchThreshed, CvType.CV_8U);
+                if(DEBUG) {
+                    if(tileTypeEntry.getKey().equals(TileType.LINE)) {
+                        Debug.sendMatrix(eightBitMatchThreshed);
+                    }
+                }
                 List<MatOfPoint> contours = new ArrayList<>();
                 Mat hierarchy = new Mat();
                 Imgproc.findContours(
-                        eightBitMatchThreshed,
+                        eightBitMatchThreshed.clone(),
                         contours,
                         hierarchy,
                         Imgproc.RETR_LIST,
                         Imgproc.CHAIN_APPROX_NONE);
                 for(MatOfPoint contour : contours) {
                     final Rect rect = Imgproc.boundingRect(contour);
+
                     double centerOfRectX = rect.x + (double)rect.width / 2;
                     double centerOfRectY = rect.y + (double)rect.height / 2;
 
@@ -174,13 +201,13 @@ public class ImageProcessor {
                     // in one stretch
                     if(rect.width > tileImageToMatch.width()) {
                         double exactRatioOfWidths = (double)rect.width / (double)tileImageToMatch.width();
-                        long numTilesMatched = Math.round(exactRatioOfWidths) + 1;
-                        for(long i = 0; i < numTilesMatched; ++i) {
+                        int numTilesMatched = (int)Math.ceil(exactRatioOfWidths);
+                        for(int i = 0; i < numTilesMatched; ++i) {
                             // for these long matches we decrease the certainty of the match near the edges
                             // because the long matches tend to bleed into the adjacent tiles...
                             double localCertainty = certainty;
                             if(i == 0 || i == numTilesMatched - 1) {
-                                localCertainty *= 0.9;
+                                localCertainty *= 0.8;
                             }
                             double xpos = centerOfRectX + i * tileImageToMatch.width() - (numTilesMatched - 1) * (double)tileImageToMatch.width() / 2;
                             // This approach sometimes bleeds outside the tile space pretty badly
@@ -196,8 +223,8 @@ public class ImageProcessor {
                         }
                     } else if(rect.height > tileImageToMatch.height()) {
                         double exactRatioOfHeights = (double)rect.height / (double)tileImageToMatch.height();
-                        long numTilesMatched = Math.round(exactRatioOfHeights) + 1;
-                        for(long i = 0; i < numTilesMatched; ++i) {
+                        int numTilesMatched = (int)Math.ceil(exactRatioOfHeights);
+                        for(int i = 0; i < numTilesMatched; ++i) {
                             // for these long matches we decrease the certainty of the match near the edges
                             // because the long matches tend to bleed into the adjacent tiles...
                             double localCertainty = certainty;
@@ -228,8 +255,41 @@ public class ImageProcessor {
                 }
             }
         }
-        /*
-        if(BuildConfig.DEBUG) {
+
+        if(guesses.isEmpty()) {
+            return null;
+        }
+
+        // find smallest and largest xpos and ypos to build the bounds for our grid
+        GuessRecord first = guesses.get(0);
+        double smallestXpos = first.xpos;
+        double largestXpos = first.xpos + first.matchedImage.width();
+        double smallestYpos = first.ypos;
+        double largestYpos = first.ypos + first.matchedImage.height();
+        double meanMatchedImageWidth = 0;
+        double meanMatchedImageHeight = 0;
+        double perGuessFactor = 1 / (double)guesses.size();
+        for(GuessRecord guess: guesses) {
+            if(!guess.type.equals(TileType.EMPTY)) {
+                smallestXpos = Math.min(smallestXpos, guess.xpos);
+                largestXpos = Math.max(largestXpos, guess.xpos + guess.matchedImage.width());
+                smallestYpos = Math.min(smallestYpos, guess.ypos);
+                largestYpos = Math.max(largestYpos, guess.ypos + guess.matchedImage.height());
+            }
+            meanMatchedImageWidth += perGuessFactor * guess.matchedImage.width();
+            meanMatchedImageHeight += perGuessFactor * guess.matchedImage.height();
+        }
+
+        int cols = (int) Math.round((largestXpos - smallestXpos) / meanMatchedImageWidth);
+        int rows = (int) Math.round((largestYpos - smallestYpos) / meanMatchedImageHeight);
+        GridInfo gridInfo = new GridInfo();
+        gridInfo.colWidth = meanMatchedImageWidth;
+        gridInfo.rowHeight = meanMatchedImageHeight;
+        gridInfo.originX = (largestXpos - (cols*gridInfo.colWidth) + smallestXpos) / 2;
+        gridInfo.originY = (largestYpos - (rows*gridInfo.rowHeight) + smallestYpos) / 2;
+
+
+        if(DEBUG) {
             Mat guessesVisualized = new Mat(gameImageRoi.size(), CvType.CV_8UC1);
             for(GuessRecord guess: guesses) {
                 Rect roiRect = new Rect(
@@ -238,7 +298,28 @@ public class ImageProcessor {
                         guess.matchedImage.width(),
                         guess.matchedImage.height());
                 Mat roi = new Mat(guessesVisualized, roiRect);
-                Core.add(roi, guess.matchedImage, roi);
+                if(guess.type.equals(TileType.EMPTY)) {
+                    Core.add(roi, new Scalar(127), roi);
+                } else {
+                    Core.add(roi, guess.matchedImage, roi);
+                }
+            }
+
+            for(int colIndex = 0; colIndex <= cols; ++colIndex) {
+                double xCol = gridInfo.originX + colIndex * gridInfo.colWidth;
+                Imgproc.line(
+                        guessesVisualized,
+                        new Point(xCol, 0),
+                        new Point(xCol, guessesVisualized.height() - 1),
+                        new Scalar(255));
+            }
+            for(int rowIndex = 0; rowIndex <= rows; ++rowIndex) {
+                double yRow = gridInfo.originY + rowIndex * gridInfo.rowHeight;
+                Imgproc.line(
+                        guessesVisualized,
+                        new Point(0, yRow),
+                        new Point(guessesVisualized.width() - 1, yRow),
+                        new Scalar(255));
             }
             Debug.sendMatrix(guessesVisualized);
             try {
@@ -247,37 +328,6 @@ public class ImageProcessor {
                 e.printStackTrace();
             }
         }
-        */
-        if(guesses.isEmpty()) {
-            return null;
-        }
-
-        // find smallest and largest xpos and ypos to build the bounds for our grid
-        double smallestXpos = guesses.get(0).xpos;
-        double largestXpos = guesses.get(0).xpos;
-        double smallestYpos = guesses.get(0).ypos;
-        double largestYpos = guesses.get(0).ypos;
-        double meanMatchedImageWidth = 0;
-        double meanMatchedImageHeight = 0;
-        double perGuessFactor = 1 / (double)guesses.size();
-        for(GuessRecord guess: guesses) {
-            if(!guess.type.equals(TileType.EMPTY)) {
-                smallestXpos = Math.min(smallestXpos, guess.xpos);
-                largestXpos = Math.max(largestXpos, guess.xpos);
-                smallestYpos = Math.min(smallestYpos, guess.ypos);
-                largestYpos = Math.max(largestYpos, guess.ypos);
-            }
-            meanMatchedImageWidth += perGuessFactor * guess.matchedImage.width();
-            meanMatchedImageHeight += perGuessFactor * guess.matchedImage.height();
-        }
-
-        int cols = (int) Math.round((largestXpos - smallestXpos) / meanMatchedImageWidth) + 1;
-        int rows = (int) Math.round((largestYpos - smallestYpos) / meanMatchedImageHeight) + 1;
-        GridInfo gridInfo = new GridInfo();
-        gridInfo.originX = smallestXpos;
-        gridInfo.originY = smallestYpos;
-        gridInfo.colWidth = meanMatchedImageWidth;
-        gridInfo.rowHeight = meanMatchedImageHeight;
 
         TileState[][] gridState = new TileState[cols][rows];
         for(int colIndex = 0; colIndex < cols; ++colIndex) {
@@ -293,9 +343,7 @@ public class ImageProcessor {
             int rowIndex = (int) Math.round((guess.ypos - gridInfo.originY) / gridInfo.rowHeight);
             TileState targetEntry = gridState[colIndex][rowIndex];
             double priorCertainty = gridCertainties[colIndex][rowIndex];
-            if (guess.certainty == priorCertainty) {
-                Log.d(TAG, "Found precisely equal certainties in guesses");
-            } else if (guess.certainty > priorCertainty) {
+            if (guess.certainty > priorCertainty) {
                 TileState newVal = new TileState();
                 newVal.type = guess.type;
                 newVal.orientation = guess.orientation;
@@ -316,19 +364,9 @@ public class ImageProcessor {
         gridInfo.colWidth *= reverseScaleFactor;
         gridInfo.rowHeight *= reverseScaleFactor;
 
-        /*
-        Mat debugGameImage = bitmapToBinaryMat(b, 1);
-        Imgproc.rectangle(
-                debugGameImage,
-                new Point(gridInfo.originX, gridInfo.originY),
-                new Point(gridInfo.originX + gridInfo.colWidth, gridInfo.originY + gridInfo.rowHeight),
-                new Scalar(255));
-        Debug.sendMatrix(debugGameImage);
-        */
-        /*
-        if(BuildConfig.DEBUG) {
+
+        if(DEBUG) {
             Mat debugImage = new Mat(b.getHeight(), b.getWidth(), CvType.CV_8UC1);
-            //Log.d(TAG, debugImage.size().toString());
             for (int colIndex = 0; colIndex < cols; ++colIndex) {
                 for (int rowIndex = 0; rowIndex < rows; ++rowIndex) {
                     TileState t = gridState[colIndex][rowIndex];
@@ -349,7 +387,7 @@ public class ImageProcessor {
             }
             Debug.sendMatrix(debugImage);
         }
-        */
+
         return new GameState(gridInfo, gridState);
     }
 

@@ -3,6 +3,7 @@ package efokschaner.infinityloopsolver;
 
 import android.app.UiAutomation;
 import android.graphics.Bitmap;
+import android.graphics.Rect;
 import android.os.SystemClock;
 import android.util.Log;
 import android.view.InputDevice;
@@ -132,7 +133,7 @@ public class Solver {
         @Override
         public void run() {
             try {
-                mUiAutomation.waitForIdle(500, 10000);
+                mUiAutomation.waitForIdle(1000, 10000);
                 while(!Thread.interrupted()) {
                     // click to complete the level
                     Log.d(TAG, "Completing level");
@@ -150,7 +151,6 @@ public class Solver {
                                     Log.d(TAG, "Acting");
                                     for(ClickAction action : actions) {
                                         injectClickEvent(action.xpos, action.ypos, mUiAutomation);
-                                        Thread.sleep(80);
                                     }
                                     Thread.sleep(1500);
                                 }

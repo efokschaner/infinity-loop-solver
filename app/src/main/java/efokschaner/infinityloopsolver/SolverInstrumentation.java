@@ -18,6 +18,7 @@ public class SolverInstrumentation extends Instrumentation {
             public void run() {
                 final UiAutomation uiAutomation = getUiAutomation();
                 final AccessibilityServiceInfo serviceInfo = uiAutomation.getServiceInfo();
+                serviceInfo.notificationTimeout = 0;
                 serviceInfo.flags |= AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
                 uiAutomation.setServiceInfo(serviceInfo);
                 ((SolverApplication) app).setUiAutomation(getUiAutomation());
