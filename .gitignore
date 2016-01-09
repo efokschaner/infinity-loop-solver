@@ -33,6 +33,7 @@ proguard/
 
 # Log Files
 *.log
+*.trace
 
 # Dreaded DS_Store
 .DS_Store

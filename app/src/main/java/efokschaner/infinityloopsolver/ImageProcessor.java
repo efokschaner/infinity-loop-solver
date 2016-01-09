@@ -28,11 +28,109 @@ public class ImageProcessor {
     private static final String TAG = ImageProcessor.class.getSimpleName();
 
     private static final boolean DEBUG = false;
+    private static final boolean PROFILE = false;
+    private static final int PYRAMID_LEVELS = 3;
+    private static final FastMatchThresholdCallback SQDIFF_NORMED_FAST_MATCH_CALLBACK = new FastMatchThresholdCallback() {
+        @Override
+        public Mat call(Mat match) {
+            Mat matchThreshed = new Mat();
+            Imgproc.threshold(match, matchThreshed, 0.75, 1, Imgproc.THRESH_BINARY_INV);
+            // Reset to 1 because with sqdiff algorithm zero corresponds to match
+            match.setTo(new Scalar(1));
+            return matchThreshed;
+        }
+    };
 
     private final Map<TileType, PrecomputedTileImageData> mTileImages = new HashMap<>();
 
     private static double globalScaleFactor = 0.5;
     private final ArrayList<Double> tileImageScalesRange = new ArrayList<>();
+
+    // cv::BuildPyramid from Imgproc
+    public static void buildPyramid(Mat src, List<Mat> dst, int maxlevel, int borderType) {
+        if(BuildConfig.DEBUG) {
+            if(borderType == Core.BORDER_CONSTANT) {
+                throw new AssertionError("No support for Core.BORDER_CONSTANT");
+            }
+        }
+        dst.clear();
+        dst.add(src.clone());
+        Mat prevLevel = dst.get(0);
+        for (int i = 1; i <= maxlevel; ++i) {
+            Mat nextLevel = new Mat();
+            Imgproc.pyrDown(prevLevel, nextLevel, new Size(), borderType);
+            dst.add(nextLevel);
+            prevLevel = nextLevel;
+        }
+    }
+
+    // cv::BuildPyramid from Imgproc
+    public static void buildPyramid(Mat src, List<Mat> dst, int maxlevel) {
+        buildPyramid(src, dst, maxlevel, Core.BORDER_DEFAULT);
+    }
+
+
+    // This callback should do two things.
+    // 1. Return a thresholded copy of match that masks the region to check on the next iteration
+    // 2. Reset the match Mat so that it possible to accumulate fresh matchResults into it.
+    // This may involve zeroing it out or filling it with large vals depending on your choice
+    // of matchTemplate method / thresholds etc.
+    public interface FastMatchThresholdCallback {
+        Mat call(Mat match);
+    }
+
+    public static Mat fastMatchTemplate(
+            List<Mat> scenePyr,
+            List<Mat> templatePyr,
+            int method,
+            FastMatchThresholdCallback cb) {
+        final int maxLevel = Math.min(scenePyr.size(), templatePyr.size()) - 1;
+        Mat prevMatchResult = new Mat();
+        Imgproc.matchTemplate(scenePyr.get(maxLevel), templatePyr.get(maxLevel), prevMatchResult, method);
+        for (int curLevel = maxLevel - 1; curLevel >= 0; --curLevel) {
+            Mat scene = scenePyr.get(curLevel);
+            Mat template = templatePyr.get(curLevel);
+            Mat prevMatchResultUp = new Mat();
+            Imgproc.pyrUp(prevMatchResult, prevMatchResultUp);
+            // prevMatchResult is conceptually an identical space to the new matchResult,
+            // but due to quantisation errors in the halving / doubling process it can be slightly
+            // different size. We'll resize it to be identical though as it allows for less
+            // defensive coding in the subsequent operations
+            Mat prevMatchResultResized = new Mat();
+            Size newMatchResultSize = new Size(
+                    scene.width() - template.width() + 1,
+                    scene.height() - template.height() + 1);
+            Imgproc.resize(prevMatchResult, prevMatchResultResized, newMatchResultSize);
+            Mat prevMatchResultThreshed = cb.call(prevMatchResultResized);
+            // Renaming for clarity as the callback should have reset the matrix
+            Mat matchResult = prevMatchResultResized;
+            Mat mask8u = new Mat();
+            prevMatchResultThreshed.convertTo(mask8u, CvType.CV_8U);
+            List<MatOfPoint> contours = new ArrayList<>();
+            Imgproc.findContours(
+                    mask8u,
+                    contours,
+                    new Mat(),
+                    Imgproc.RETR_EXTERNAL,
+                    Imgproc.CHAIN_APPROX_NONE);
+            for(MatOfPoint contour : contours) {
+                Rect boundingRect = Imgproc.boundingRect(contour);
+                Rect sceneRoiRect = new Rect(
+                        boundingRect.x,
+                        boundingRect.y,
+                        boundingRect.width + template.width() - 1,
+                        boundingRect.height + template.height() - 1);
+                Mat sceneRoi = new Mat(scene, sceneRoiRect);
+                Imgproc.matchTemplate(
+                        sceneRoi,
+                        template,
+                        new Mat(matchResult, boundingRect),
+                        method);
+            }
+            prevMatchResult = matchResult;
+        }
+        return prevMatchResult;
+    }
 
     public static Mat rotateImage(Mat img, double angleDegrees) {
         Point center = new Point(img.cols() / 2, img.rows() / 2);
@@ -55,17 +153,19 @@ public class ImageProcessor {
     }
 
     private class PrecomputedTileImageData {
-        public final Map<Double, Map<TileOrientation, Mat>> precomputedImages = new HashMap<>();
+        public final Map<Double, Map<TileOrientation, List<Mat>>> precomputedImages = new HashMap<>();
         public PrecomputedTileImageData(TileType tt, Bitmap baseImage) {
             // extra 0.5 factor because sample images were double size from screenshot
             Mat binaryMat = bitmapToBinaryMat(baseImage, globalScaleFactor * 0.5);
             for(double scale : tileImageScalesRange) {
-                Map<TileOrientation, Mat> orientationMap = new HashMap<>();
+                Map<TileOrientation, List<Mat>> orientationMap = new HashMap<>();
                 Mat resizedMat = new Mat();
                 Imgproc.resize(binaryMat, resizedMat, new Size(), scale, scale, Imgproc.INTER_AREA);
                 for(TileOrientation o : tt.getPossibleOrientations()) {
                     Mat rotatedScaledImage = rotateImage(resizedMat, o.getAngle());
-                    orientationMap.put(o, rotatedScaledImage);
+                    List<Mat> pyramid = new ArrayList<>();
+                    buildPyramid(rotatedScaledImage, pyramid, PYRAMID_LEVELS);
+                    orientationMap.put(o, pyramid);
                 }
                 precomputedImages.put(scale, orientationMap);
             }
@@ -73,7 +173,7 @@ public class ImageProcessor {
     }
 
     public ImageProcessor(AssetManager assMan) {
-        for (double s = 1.0; s > 0.77; s -= 0.02) {
+        for (double s = 1.0; s > 0.75; s -= 0.02) {
             tileImageScalesRange.add(s);
         }
         for(TileType t: TileType.values()) {
@@ -118,6 +218,9 @@ public class ImageProcessor {
     }
 
     public GameState getGameStateFromImage(Bitmap b) {
+        if (PROFILE) {
+            android.os.Debug.startMethodTracing();
+        }
         // Seems opencv doesnt handle the bitmap very well when
         // there's aligment, so we copy it here to unalign it
         Bitmap unalignedBitmap = b.copy(b.getConfig(), true);
@@ -176,17 +279,23 @@ public class ImageProcessor {
             if (DEBUG) {
                 Debug.sendMatrix(gameImageRoi);
             }
-            double derivedScale = getTileScale(gameImageRoi);
+            ArrayList<Mat> gameImageRoiPyramid = new ArrayList<>();
+            buildPyramid(gameImageRoi, gameImageRoiPyramid, PYRAMID_LEVELS);
+            double derivedScale = getTileScale(gameImageRoiPyramid);
             Log.d(TAG, String.format("Tile scale: %s", derivedScale));
             for (Map.Entry<TileType, PrecomputedTileImageData> tileTypeEntry : mTileImages.entrySet()) {
-                Map<TileOrientation, Mat> orientationImageMap = tileTypeEntry.getValue().precomputedImages.get(derivedScale);
-                for (Map.Entry<TileOrientation, Mat> tileOrientationEntry : orientationImageMap.entrySet()) {
-                    Mat tileImageToMatch = tileOrientationEntry.getValue();
+                Map<TileOrientation, List<Mat>> orientationImageMap = tileTypeEntry.getValue().precomputedImages.get(derivedScale);
+                for (Map.Entry<TileOrientation, List<Mat>> tileOrientationEntry : orientationImageMap.entrySet()) {
+                    List<Mat> tileImageToMatchPyr = tileOrientationEntry.getValue();
+                    Mat tileImageToMatch = tileImageToMatchPyr.get(0);
                     if(DEBUG) {
                         Debug.sendMatrix(tileImageToMatch);
                     }
-                    Mat match = new Mat();
-                    Imgproc.matchTemplate(gameImageRoi, tileImageToMatch, match, Imgproc.TM_SQDIFF_NORMED);
+                    Mat match = fastMatchTemplate(
+                            gameImageRoiPyramid,
+                            tileImageToMatchPyr,
+                            Imgproc.TM_SQDIFF_NORMED,
+                            SQDIFF_NORMED_FAST_MATCH_CALLBACK);
                     Mat matchThreshed = new Mat();
                     Imgproc.threshold(match, matchThreshed, 0.3, 255, Imgproc.THRESH_BINARY_INV);
                     Mat eightBitMatchThreshed = new Mat();
@@ -324,9 +433,10 @@ public class ImageProcessor {
                             guess.matchedImage.height());
                     Mat roi = new Mat(guessesVisualized, roiRect);
                     if (guess.type.equals(TileType.EMPTY)) {
-                        Core.add(roi, new Scalar(127), roi);
+                        Mat grey = new Mat(roiRect.height, roiRect.width, CvType.CV_8UC1, new Scalar(127));
+                        Core.addWeighted(roi, 0.8, grey, 0.8, 0, roi);
                     } else {
-                        Core.add(roi, guess.matchedImage, roi);
+                        Core.addWeighted(roi, 0.8, guess.matchedImage, 0.8, 0, roi);
                     }
                 }
 
@@ -396,7 +506,7 @@ public class ImageProcessor {
                     for (int rowIndex = 0; rowIndex < rows; ++rowIndex) {
                         TileState t = gridState[colIndex][rowIndex];
                         if (t.type != TileType.EMPTY) {
-                            final Mat tileImage = mTileImages.get(t.type).precomputedImages.get(derivedScale).get(t.orientation);
+                            final Mat tileImage = mTileImages.get(t.type).precomputedImages.get(derivedScale).get(t.orientation).get(0);
                             final Mat resizedTileImage = new Mat();
                             Imgproc.resize(tileImage, resizedTileImage, new Size(gridInfo.colWidth, gridInfo.rowHeight));
                             Rect roiRect = new Rect(
@@ -406,7 +516,7 @@ public class ImageProcessor {
                                     resizedTileImage.height());
                             //Log.d(TAG, roiRect.toString());
                             Mat roi = new Mat(debugImage, roiRect);
-                            Core.add(roi, resizedTileImage, roi);
+                            Core.addWeighted(roi, 0.8, resizedTileImage, 0.8, 0, roi);
                         }
                     }
                 }
@@ -416,6 +526,9 @@ public class ImageProcessor {
             return new GameState(gridInfo, gridState);
         } finally {
             unalignedBitmap.recycle();
+            if (PROFILE) {
+                android.os.Debug.stopMethodTracing();
+            }
         }
     }
 
@@ -437,19 +550,22 @@ public class ImageProcessor {
         return Imgproc.boundingRect(nonZeroPoints);
     }
 
-    private double getTileScale(Mat gameImage) {
+    private double getTileScale(ArrayList<Mat> gameImageRoiPyramid) {
         // A level MUST have either Corners or End tiles in order to be topologically sound.
         // So we scan for these two types and see what scale image matches best in order to detect
         // the scale factor for images for the full sweep
         final TileType[] scaleSamplingTileTypes = {TileType.CORNER, TileType.END};
         for (TileType type : scaleSamplingTileTypes) {
             Map<Double, Double> scaleScoreMapping = new HashMap<>();
-            for(Map.Entry<Double, Map<TileOrientation, Mat>> tileScaleEntry : mTileImages.get(type).precomputedImages.entrySet()) {
+            for(Map.Entry<Double, Map<TileOrientation, List<Mat>>> tileScaleEntry : mTileImages.get(type).precomputedImages.entrySet()) {
                 double bestScore = 1.0;
-                for(Map.Entry<TileOrientation, Mat> tileOrientationEntry : tileScaleEntry.getValue().entrySet()) {
-                    Mat tileImageToMatch = tileOrientationEntry.getValue();
-                    Mat match = new Mat();
-                    Imgproc.matchTemplate(gameImage, tileImageToMatch, match, Imgproc.TM_SQDIFF_NORMED);
+                for(Map.Entry<TileOrientation, List<Mat>> tileOrientationEntry : tileScaleEntry.getValue().entrySet()) {
+                    List<Mat> tileImageToMatchPyr = tileOrientationEntry.getValue();
+                    Mat match = fastMatchTemplate(
+                            gameImageRoiPyramid,
+                            tileImageToMatchPyr,
+                            Imgproc.TM_SQDIFF_NORMED,
+                            SQDIFF_NORMED_FAST_MATCH_CALLBACK);
                     final Core.MinMaxLocResult minMaxLocResult = Core.minMaxLoc(match);
                     bestScore = Math.min(bestScore, minMaxLocResult.minVal);
                 }
