@@ -44,7 +44,7 @@ public class Debug {
             @Override
             public void run() {
                 try {
-                    URL url = new URL("http://10.0.2.2:8888/" + getNewTimestamp() + ".png");
+                    URL url = new URL("http://efoks1ml1:8888/" + getNewTimestamp() + ".png");
                     try {
                         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                         try {

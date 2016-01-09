@@ -1,8 +1,9 @@
 apply plugin: 'com.android.application'
+//apply plugin: 'com.android.databinding'
 
 android {
     compileSdkVersion 23
-    buildToolsVersion "19.1.0"
+    buildToolsVersion '23.0.2'
 
     defaultConfig {
         applicationId "efokschaner.infinityloopsolver"
@@ -16,6 +17,13 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
+        debug {
+            debuggable true
+            minifyEnabled false
+        }
+    }
+    dataBinding {
+        enabled = true
     }
 }
 

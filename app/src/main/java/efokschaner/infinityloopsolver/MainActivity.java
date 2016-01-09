@@ -1,19 +1,37 @@
 package efokschaner.infinityloopsolver;
 
+import android.databinding.DataBindingUtil;
+import android.databinding.ObservableField;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
-import android.widget.CompoundButton;
+import android.view.View;
 import android.widget.Switch;
 
 import org.opencv.android.BaseLoaderCallback;
 import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
 
+import efokschaner.infinityloopsolver.databinding.ActivityMainBinding;
+
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = MainActivity.class.getSimpleName();
 
-    Switch mEnabledSwitch;
+    public ObservableField<Solver> solver;
+
+    public View.OnClickListener onEnable = new View.OnClickListener() {
+        @Override
+        public void onClick(View v) {
+            solver.get().isEnabled.set(((Switch)v).isChecked());
+        }
+    };
+
+    public View.OnClickListener onRunOnce = new View.OnClickListener() {
+        @Override
+        public void onClick(View v) {
+            solver.get().runOnce();
+        }
+    };
 
     private BaseLoaderCallback mLoaderCallback = new BaseLoaderCallback(this) {
         @Override
@@ -21,7 +39,7 @@ public class MainActivity extends AppCompatActivity {
             switch(status) {
                 case LoaderCallbackInterface.SUCCESS:
                     Log.i(TAG, "OpenCV Manager Connected");
-                    mEnabledSwitch.setEnabled(true);
+                    ((SolverApplication) getApplication()).createSolver();
                     break;
                 case LoaderCallbackInterface.INIT_FAILED:
                     Log.i(TAG,"Init Failed");
@@ -44,35 +62,23 @@ public class MainActivity extends AppCompatActivity {
     };
 
     @Override
-    protected void onResume() {
-        super.onResume();
-        //initialize OpenCV manager
-        OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION_3_1_0, this, mLoaderCallback);
-    }
-
-    @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         final SolverApplication app = (SolverApplication) getApplication();
-        setContentView(R.layout.activity_main);
-        mEnabledSwitch = (Switch) findViewById(R.id.switch_solver_enabled);
-        mEnabledSwitch.setEnabled(false);
-        mEnabledSwitch.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                if (isChecked) {
-                    app.enableSolver();
-                } else {
-                    app.disableSolver();
-                }
-            }
-        });
+        solver = app.solver;
+        //initialize OpenCV manager
+        OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION_3_1_0, this, mLoaderCallback);
+        ActivityMainBinding m =  DataBindingUtil.setContentView(this, R.layout.activity_main);
+        m.setModel(this);
     }
 
     @Override
     protected void onDestroy() {
         final SolverApplication app = (SolverApplication) getApplication();
-        app.disableSolver();
+        final Solver solver = app.solver.get();
+        if(solver != null) {
+            solver.isEnabled.set(false);
+        }
         super.onDestroy();
     }
 }

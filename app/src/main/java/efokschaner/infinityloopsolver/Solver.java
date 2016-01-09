@@ -2,8 +2,10 @@ package efokschaner.infinityloopsolver;
 
 
 import android.app.UiAutomation;
+import android.databinding.Observable;
+import android.databinding.ObservableBoolean;
+import android.databinding.ObservableField;
 import android.graphics.Bitmap;
-import android.graphics.Rect;
 import android.os.SystemClock;
 import android.util.Log;
 import android.view.InputDevice;
@@ -22,20 +24,42 @@ public class Solver {
     private final UiAutomation mUiAutomation;
     private final ImageProcessor mImageProcessor;
     private Thread mSolverThread;
+    private boolean mNextRunIsOnce;
+
+    public final ObservableBoolean isEnabled = new ObservableBoolean(false);
+    public final ObservableField<String> lastError = new ObservableField<>();
+
+    private void startOrStopSolverThread() {
+        if(isEnabled.get() && isInfinityLoopReady(mUiAutomation.getWindows())) {
+            if(mSolverThread == null) {
+                mSolverThread = new Thread(getSolverFunc(mNextRunIsOnce));
+                mNextRunIsOnce = false;
+                mSolverThread.start();
+            }
+        } else {
+            stopSolver();
+        }
+    }
+
+    public void runOnce() {
+        mNextRunIsOnce = true;
+        isEnabled.set(true);
+    }
 
     public Solver(UiAutomation uiAutomation, ImageProcessor imageProcessor) {
+        isEnabled.addOnPropertyChangedCallback(new Observable.OnPropertyChangedCallback() {
+            @Override
+            public void onPropertyChanged(Observable sender, int propertyId) {
+                startOrStopSolverThread();
+            }
+        });
         mImageProcessor = imageProcessor;
         mUiAutomation = uiAutomation;
         mUiAutomation.setOnAccessibilityEventListener(new UiAutomation.OnAccessibilityEventListener() {
             @Override
             public void onAccessibilityEvent(AccessibilityEvent event) {
-                if(isInfinityLoopReady(mUiAutomation, event)) {
-                    if(mSolverThread == null) {
-                        mSolverThread = new Thread(mRunnableSolver);
-                        mSolverThread.start();
-                    }
-                } else {
-                    stopSolver();
+                if(event.getEventType() == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
+                    startOrStopSolverThread();
                 }
             }
         });
@@ -53,11 +77,6 @@ public class Solver {
                 mSolverThread = null;
             }
         }
-    }
-
-    public void shutdown() {
-        mUiAutomation.setOnAccessibilityEventListener(null);
-        stopSolver();
     }
 
     private static final Runnable NOOP = new Runnable() { public void run() {} };
@@ -82,15 +101,6 @@ public class Solver {
         Log.d(TAG, String.format("windows.size() = %s", windows.size()));
         return (windows.size() == 1 &&
                 (findInfinityLoopView(windows.get(0).getRoot())) != null);
-    }
-
-    private static boolean isInfinityLoopReady(UiAutomation uiAutomation, AccessibilityEvent event) {
-        if(event.getEventType() == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
-            final List<AccessibilityWindowInfo> windows = uiAutomation.getWindows();
-            return isInfinityLoopReady(windows);
-        } else {
-            return false;
-        }
     }
 
     /**
@@ -129,23 +139,23 @@ public class Solver {
         motionDown.recycle();
     }
 
-    private Runnable mRunnableSolver = new Runnable() {
-        @Override
-        public void run() {
-            try {
-                mUiAutomation.waitForIdle(1000, 10000);
-                while(!Thread.interrupted()) {
-                    // click to complete the level
-                    Log.d(TAG, "Completing level");
-                    injectClickEvent(20, 20, mUiAutomation);
-                    Thread.sleep(3200);
-                    Log.d(TAG, "Interpreting");
-                    Bitmap b = mUiAutomation.takeScreenshot();
-                    try{
-                        final GameState gameStateFromImage = mImageProcessor.getGameStateFromImage(b);
-                        if(gameStateFromImage != null) {
-                            Log.d(TAG, "Solving");
-                            try {
+    private Runnable getSolverFunc(final boolean runOnce) {
+        return new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    mUiAutomation.waitForIdle(1000, 10000);
+                    while(!Thread.interrupted()) {
+                        // click to complete the level
+                        Log.d(TAG, "Completing level");
+                        injectClickEvent(20, 20, mUiAutomation);
+                        Thread.sleep(3200);
+                        Log.d(TAG, "Interpreting");
+                        Bitmap b = mUiAutomation.takeScreenshot();
+                        try{
+                            final GameState gameStateFromImage = mImageProcessor.getGameStateFromImage(b);
+                            if(gameStateFromImage != null) {
+                                Log.d(TAG, "Solving");
                                 final List<ClickAction> actions = gameStateFromImage.getSolution();
                                 if(!Thread.interrupted()) {
                                     Log.d(TAG, "Acting");
@@ -154,17 +164,21 @@ public class Solver {
                                     }
                                     Thread.sleep(1500);
                                 }
-                            } catch (GameState.UnsolvableError unsolvableError) {
-                                unsolvableError.printStackTrace();
                             }
+                        } finally {
+                            b.recycle();
                         }
-                    } finally {
-                        b.recycle();
+                        if(runOnce) {
+                            break;
+                        }
                     }
+                } catch (TimeoutException | InterruptedException | GameState.UnsolvableError e) {
+                    e.printStackTrace();
+                    lastError.set(Log.getStackTraceString(e));
+                } finally {
+                    isEnabled.set(false);
                 }
-            } catch (TimeoutException | InterruptedException e) {
-                e.printStackTrace();
             }
-        }
-    };
+        };
+    }
 }
