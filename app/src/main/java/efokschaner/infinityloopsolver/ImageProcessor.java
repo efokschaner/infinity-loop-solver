@@ -150,17 +150,27 @@ public class ImageProcessor {
             int largestTileWidth = 144;
             // buffer selected to add around half a tile of padding around the image.
             int buffer = (int) (0.5 * globalScaleFactor * largestTileWidth);
+            int gameImageRoiRectX = Math.max(tilesBoundingRect.x - buffer, 0);
+            int gameImageRoiRectY = Math.max(tilesBoundingRect.y - buffer, 0);
             final Rect gameImageRoiRect = new Rect(
-                    Math.max(tilesBoundingRect.x - buffer, 0),
-                    Math.max(tilesBoundingRect.y - buffer, 0),
-                    Math.min(tilesBoundingRect.width + 2 * buffer, lowResBinaryGameImage.width() - tilesBoundingRect.x + buffer),
-                    Math.min(tilesBoundingRect.height + 2 * buffer, lowResBinaryGameImage.height() - tilesBoundingRect.y + buffer));
+                    gameImageRoiRectX,
+                    gameImageRoiRectY,
+                    Math.min(tilesBoundingRect.width + 2 * buffer, lowResBinaryGameImage.width() - gameImageRoiRectX),
+                    Math.min(tilesBoundingRect.height + 2 * buffer, lowResBinaryGameImage.height() - gameImageRoiRectY));
 
             final Rect tilesBoundingRectRelativeToGameRoiRect = new Rect(
                     tilesBoundingRect.x - gameImageRoiRect.x,
                     tilesBoundingRect.y - gameImageRoiRect.y,
                     tilesBoundingRect.width,
                     tilesBoundingRect.height);
+
+            if(DEBUG) {
+                try {
+                    Thread.sleep(2000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
 
             Mat gameImageRoi = new Mat(lowResBinaryGameImage, gameImageRoiRect);
             if (DEBUG) {
