@@ -173,7 +173,7 @@ public class ImageProcessor {
     }
 
     public ImageProcessor(AssetManager assMan) {
-        for (double s = 1.0; s > 0.75; s -= 0.01) {
+        for (double s = 1.0; s > 0.75; s -= 0.02) {
             tileImageScalesRange.add(s);
         }
         for(TileType t: TileType.values()) {
