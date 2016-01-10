@@ -335,7 +335,7 @@ public class ImageProcessor {
                         // in one stretch
                         if (rect.width > tileImageToMatch.width()) {
                             double exactRatioOfWidths = (double) rect.width / (double) tileImageToMatch.width();
-                            int numTilesMatched = (int) Math.ceil(exactRatioOfWidths);
+                            int numTilesMatched = (int) Math.floor(exactRatioOfWidths) + 1;
                             for (int i = 0; i < numTilesMatched; ++i) {
                                 // for these long matches we decrease the certainty of the match near the edges
                                 // because the long matches tend to bleed into the adjacent tiles...
@@ -357,7 +357,7 @@ public class ImageProcessor {
                             }
                         } else if (rect.height > tileImageToMatch.height()) {
                             double exactRatioOfHeights = (double) rect.height / (double) tileImageToMatch.height();
-                            int numTilesMatched = (int) Math.ceil(exactRatioOfHeights);
+                            int numTilesMatched = (int) Math.floor(exactRatioOfHeights) + 1;
                             for (int i = 0; i < numTilesMatched; ++i) {
                                 // for these long matches we decrease the certainty of the match near the edges
                                 // because the long matches tend to bleed into the adjacent tiles...
