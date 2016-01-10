@@ -30,5 +30,6 @@ The application only works when launched this way as it uses UiAutomation api's 
 available to normally launched applications.
 
 *Protip:* Use `nohup` to let the application stay running when adb is disconnected:
+
     adb shell 'nohup am instrument -w efokschaner.infinityloopsolver/.SolverInstrumentation </dev/null 2>&1 >/dev/null'
     ^C (stopping adb doesn't break the app)
