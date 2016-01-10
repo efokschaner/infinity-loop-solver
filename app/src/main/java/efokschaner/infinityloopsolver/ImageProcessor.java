@@ -173,7 +173,7 @@ public class ImageProcessor {
     }
 
     public ImageProcessor(AssetManager assMan) {
-        for (double s = 1.0; s > 0.75; s -= 0.02) {
+        for (double s = 1.0; s > 0.75; s -= 0.01) {
             tileImageScalesRange.add(s);
         }
         for(TileType t: TileType.values()) {
@@ -554,7 +554,8 @@ public class ImageProcessor {
         // A level MUST have either Corners or End tiles in order to be topologically sound.
         // So we scan for these two types and see what scale image matches best in order to detect
         // the scale factor for images for the full sweep
-        final TileType[] scaleSamplingTileTypes = {TileType.CORNER, TileType.END};
+        // Try end pieces for match first as they seem to be slightly more reliable than corners
+        final TileType[] scaleSamplingTileTypes = {TileType.END, TileType.CORNER};
         for (TileType type : scaleSamplingTileTypes) {
             Map<Double, Double> scaleScoreMapping = new HashMap<>();
             for(Map.Entry<Double, Map<TileOrientation, List<Mat>>> tileScaleEntry : mTileImages.get(type).precomputedImages.entrySet()) {
