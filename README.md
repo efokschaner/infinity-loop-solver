@@ -1,5 +1,7 @@
 # infinity-loop-solver
-Automatically plays the android game named "∞ Loop" (com.balysv.loop)
+Automatically plays the android game named "∞ Loop" (com.balysv.loop).
+
+See it running: https://youtu.be/8vFsN0w9UcY 
 
 ## How To
 ### Install the game if needed:
