@@ -30,11 +30,17 @@ public class ImageProcessor {
     private static final boolean DEBUG = false;
     private static final boolean PROFILE = false;
     private static final int PYRAMID_LEVELS = 3;
+    private static final double TEMPLATE_MATCH_THRESH_VAL = 0.3;
     private static final FastMatchThresholdCallback SQDIFF_NORMED_FAST_MATCH_CALLBACK = new FastMatchThresholdCallback() {
         @Override
         public Mat call(Mat match) {
             Mat matchThreshed = new Mat();
-            Imgproc.threshold(match, matchThreshed, 0.75, 1, Imgproc.THRESH_BINARY_INV);
+            Imgproc.threshold(
+                    match,
+                    matchThreshed,
+                    0.75,
+                    255,
+                    Imgproc.THRESH_BINARY_INV);
             // Reset to 1 because with sqdiff algorithm zero corresponds to match
             match.setTo(new Scalar(1));
             return matchThreshed;
@@ -90,22 +96,30 @@ public class ImageProcessor {
         for (int curLevel = maxLevel - 1; curLevel >= 0; --curLevel) {
             Mat scene = scenePyr.get(curLevel);
             Mat template = templatePyr.get(curLevel);
-            Mat prevMatchResultUp = new Mat();
-            Imgproc.pyrUp(prevMatchResult, prevMatchResultUp);
-            // prevMatchResultUp is conceptually an identical space to the new matchResult,
-            // but due to quantisation errors in the halving / doubling process it can be slightly
-            // different size. We'll resize it to be identical though as it allows for less
-            // defensive coding in the subsequent operations
+            if(DEBUG) {
+                Debug.sendMatrixSync(template);
+            }
             Mat prevMatchResultResized = new Mat();
             Size newMatchResultSize = new Size(
                     scene.width() - template.width() + 1,
                     scene.height() - template.height() + 1);
-            Imgproc.resize(prevMatchResultUp, prevMatchResultResized, newMatchResultSize);
+            // Don't bother with fancy pyrUp, its not clear that using pyr up to upsample the
+            // last layer's results actually improves accuracy.
+            Imgproc.resize(prevMatchResult, prevMatchResultResized, newMatchResultSize);
+            if(DEBUG) {
+                Mat debug = prevMatchResultResized.mul(Mat.ones(prevMatchResultResized.size(), prevMatchResultResized.type()), 255);
+                Mat debug2 = new Mat();
+                debug.convertTo(debug2, CvType.CV_8UC1);
+                Debug.sendMatrixSync(debug2);
+            }
             Mat prevMatchResultThreshed = cb.call(prevMatchResultResized);
             // Renaming for clarity as the callback should have reset the matrix
             Mat matchResult = prevMatchResultResized;
             Mat mask8u = new Mat();
             prevMatchResultThreshed.convertTo(mask8u, CvType.CV_8U);
+            if(DEBUG) {
+                Debug.sendMatrixSync(mask8u);
+            }
             List<MatOfPoint> contours = new ArrayList<>();
             Imgproc.findContours(
                     mask8u,
@@ -121,6 +135,9 @@ public class ImageProcessor {
                         boundingRect.width + template.width() - 1,
                         boundingRect.height + template.height() - 1);
                 Mat sceneRoi = new Mat(scene, sceneRoiRect);
+                if(DEBUG) {
+                    Debug.sendMatrixSync(sceneRoi);
+                }
                 Imgproc.matchTemplate(
                         sceneRoi,
                         template,
@@ -297,7 +314,12 @@ public class ImageProcessor {
                             Imgproc.TM_SQDIFF_NORMED,
                             SQDIFF_NORMED_FAST_MATCH_CALLBACK);
                     Mat matchThreshed = new Mat();
-                    Imgproc.threshold(match, matchThreshed, 0.3, 255, Imgproc.THRESH_BINARY_INV);
+                    Imgproc.threshold(
+                            match,
+                            matchThreshed,
+                            TEMPLATE_MATCH_THRESH_VAL,
+                            255,
+                            Imgproc.THRESH_BINARY_INV);
                     Mat eightBitMatchThreshed = new Mat();
                     matchThreshed.convertTo(eightBitMatchThreshed, CvType.CV_8U);
                     if (DEBUG) {
@@ -571,7 +593,7 @@ public class ImageProcessor {
                     bestScore = Math.min(bestScore, minMaxLocResult.minVal);
                 }
                 // Just in case there weren't any matches at all
-                if(bestScore < 0.2) {
+                if(bestScore < TEMPLATE_MATCH_THRESH_VAL) {
                     scaleScoreMapping.put(tileScaleEntry.getKey(), bestScore);
                 }
             }

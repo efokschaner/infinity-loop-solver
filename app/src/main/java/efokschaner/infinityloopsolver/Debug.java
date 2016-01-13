@@ -43,45 +43,49 @@ public class Debug {
         mExecutor.submit(new Runnable() {
             @Override
             public void run() {
+                sendBitmapSync(copy);
+            }
+        });
+    }
+
+    public static void sendBitmapSync(Bitmap bitmap) {
+        try {
+            URL url = new URL("http://192.168.0.5:8888/" + getNewTimestamp() + ".png");
+            try {
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 try {
-                    URL url = new URL("http://efoks1ml1:8888/" + getNewTimestamp() + ".png");
-                    try {
-                        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                        try {
-                            conn.setDoOutput(true);
-                            conn.setChunkedStreamingMode(0);
-                            conn.setRequestMethod("POST");
-                            conn.setRequestProperty("Content-Type", "application/octet-stream");
-                            try (OutputStream ostream = conn.getOutputStream()) {
-                                copy.compress(Bitmap.CompressFormat.PNG, 100, ostream);
-                            } catch (IOException e) {
-                                e.printStackTrace();
-                            }
-                            final int responseCode = conn.getResponseCode();
-                            if (!(responseCode >= 200 && responseCode < 300)) {
-                                throw new AssertionError(String.format("Http response was: %d", responseCode));
-                            }
-                            conn.getResponseMessage();
-                            BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-                            while (in.readLine() != null){
-                                // ignore contents
-                            }
-                            in.close();
-                        } catch (ProtocolException e) {
-                            e.printStackTrace();
-                        } finally {
-                            conn.disconnect();
-                        }
+                    conn.setDoOutput(true);
+                    conn.setChunkedStreamingMode(0);
+                    conn.setRequestMethod("POST");
+                    conn.setRequestProperty("Content-Type", "application/octet-stream");
+                    try (OutputStream ostream = conn.getOutputStream()) {
+                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, ostream);
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
-                } catch (MalformedURLException e) {
+                    final int responseCode = conn.getResponseCode();
+                    if (!(responseCode >= 200 && responseCode < 300)) {
+                        throw new AssertionError(String.format("Http response was: %d", responseCode));
+                    }
+                    conn.getResponseMessage();
+                    BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                    while (in.readLine() != null){
+                        // ignore contents
+                    }
+                    in.close();
+                } catch (ProtocolException e) {
                     e.printStackTrace();
                 } finally {
-                    copy.recycle();
+                    conn.disconnect();
                 }
+            } catch (IOException e) {
+                e.printStackTrace();
             }
-        });
+        } catch (MalformedURLException e) {
+            e.printStackTrace();
+        } finally {
+            bitmap.recycle();
+        }
     }
 
     public static void sendMatrix(Mat m) {
@@ -89,6 +93,12 @@ public class Debug {
         Utils.matToBitmap(m, b2);
         sendBitmap(b2);
         b2.recycle();
+    }
+
+    public static void sendMatrixSync(Mat m) {
+        Bitmap b2 = Bitmap.createBitmap(m.width(), m.height(), Bitmap.Config.ARGB_8888);
+        Utils.matToBitmap(m, b2);
+        sendBitmapSync(b2);
     }
 
     public static void sendScreenshot(UiAutomation uiAutomation) {
