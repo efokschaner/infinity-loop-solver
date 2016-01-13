@@ -92,7 +92,7 @@ public class ImageProcessor {
             Mat template = templatePyr.get(curLevel);
             Mat prevMatchResultUp = new Mat();
             Imgproc.pyrUp(prevMatchResult, prevMatchResultUp);
-            // prevMatchResult is conceptually an identical space to the new matchResult,
+            // prevMatchResultUp is conceptually an identical space to the new matchResult,
             // but due to quantisation errors in the halving / doubling process it can be slightly
             // different size. We'll resize it to be identical though as it allows for less
             // defensive coding in the subsequent operations
@@ -100,7 +100,7 @@ public class ImageProcessor {
             Size newMatchResultSize = new Size(
                     scene.width() - template.width() + 1,
                     scene.height() - template.height() + 1);
-            Imgproc.resize(prevMatchResult, prevMatchResultResized, newMatchResultSize);
+            Imgproc.resize(prevMatchResultUp, prevMatchResultResized, newMatchResultSize);
             Mat prevMatchResultThreshed = cb.call(prevMatchResultResized);
             // Renaming for clarity as the callback should have reset the matrix
             Mat matchResult = prevMatchResultResized;
